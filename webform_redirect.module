@@ -5,6 +5,8 @@
  * Contains webform redirect implementation.
  */
 
+define('WEBFORM_REDIRECT_RULES_MAX_COUNT', 10);
+
 /**
  * Implements hook_menu().
  */
@@ -24,7 +26,7 @@ function webform_redirect_nodeapi(&$node, $op, $arg = NULL) {
   if ($node->type == 'webform') {
     switch ($op) {
       case 'load':
-        $redirect_settings = db_fetch_object(db_query('SELECT * FROM {webform_redirect} WHERE nid=%d', array($node->nid)));
+        $redirect_settings = db_fetch_object(db_query('SELECT * FROM {webform_redirect} WHERE nid = %d', array($node->nid)));
         if (is_object($redirect_settings)) {
           module_load_include('inc', 'webform_redirect', 'includes/webform_redirect.class');
           $node->conditional_redirect = WebformRedirectItem::create(unserialize($redirect_settings->data));
@@ -32,7 +34,7 @@ function webform_redirect_nodeapi(&$node, $op, $arg = NULL) {
         break;
 
       case 'delete':
-        db_query('DELETE FROM {webform_redirect} WHERE nid=%d', array($node->nid));
+        db_query('DELETE FROM {webform_redirect} WHERE nid = %d', array($node->nid));
         break;
     }
   }
@@ -42,11 +44,16 @@ function webform_redirect_nodeapi(&$node, $op, $arg = NULL) {
  * Implements hook_form_alter().
  */
 function webform_redirect_form_alter(&$form, &$form_state, $form_id) {
-  if ($form_id == 'webform_configure_form' && is_array($form['submission']['redirection']['redirect']['#options'])) {
-    drupal_add_css(drupal_get_path('module', 'webform_redirect') . '/webform_redirect.css');
+  if ($form_id == 'webform_configure_form' && !empty($form['submission']['redirection']['redirect']['#options'])) {
+    $node = $form['#node'];
+    if (empty($node->webform['components'])) {
+      return;
+    }
+    drupal_add_css(drupal_get_path('module', 'webform_redirect') . '/css/webform_redirect.css');
+    drupal_add_js(drupal_get_path('module', 'webform_redirect') . '/js/webform_redirect.js');
     module_load_include('inc', 'webform_redirect', 'includes/webform_redirect.class');
     ctools_include('dependent');
-    $node = $form['#node'];
+
     /* @var  WebformRedirectItem $conditional_redirect */
     $conditional_redirect = isset($node->conditional_redirect) ? $node->conditional_redirect : NULL;
     $fallback_options = $form['submission']['redirection']['redirect']['#options'];
@@ -98,13 +105,13 @@ function webform_redirect_form_alter(&$form, &$form_state, $form_id) {
       $options = array('' => 'Select') + $options;
     }
 
-    for ($i = 0; $i < 10; $i++) {
+    for ($i = 0; $i < WEBFORM_REDIRECT_RULES_MAX_COUNT; $i++) {
       $key = 'redirect_rule_' . $i;
       /** @var WebformRedirectRule $rule */
       $rule = isset($conditional_redirect) ? $conditional_redirect->getRuleById($key) : NULL;
       $form['submission']['redirection']['conditional'][$key] = array(
         '#type' => 'item',
-        '#prefix' => '<div class="clear">',
+        '#prefix' => '<div class="rule-wrapper">',
         '#suffix' => '</div>',
       );
       $form['submission']['redirection']['conditional'][$key]['field'] = array(
@@ -132,12 +139,6 @@ function webform_redirect_form_alter(&$form, &$form_state, $form_id) {
         '#suffix' => '</div>',
       );
     }
-    $form['submission']['redirection']['conditional']['redirect_add'] = array(
-      '#type' => 'submit',
-      '#value' => t('Add item'),
-      '#prefix' => '<div class="clear">',
-      '#suffix' => '</div>',
-    );
 
     $form['#validate'][] = 'webform_redirect_configure_form_validate';
     $form['#submit'][] = 'webform_redirect_configure_form_submit';
@@ -152,6 +153,11 @@ function webform_redirect_form_alter(&$form, &$form_state, $form_id) {
  */
 function webform_redirect_configure_form_validate($form, &$form_state) {
   if ($form_state['values']['redirect'] == 'conditional') {
+    for ($i = 0; $i < WEBFORM_REDIRECT_RULES_MAX_COUNT; $i++) {
+      $key = 'redirect_rule_' . $i;
+      // todo: add validation.
+    }
+
     form_set_value($form['submission']['redirection']['redirect_url'], '<conditional>', $form_state);
   }
 }
@@ -162,10 +168,16 @@ function webform_redirect_configure_form_validate($form, &$form_state) {
 function webform_redirect_configure_form_submit($form, &$form_state) {
   // Edit the node by reference just to shorten it up.
   $node = &$form['#node'];
-  // Save the redirect URL
-  $settings = array_filter($form_state['values']['conditional']);
-  if (!empty($settings) && $form_state['values']['redirect'] == 'conditional') {
+  if ( $form_state['values']['redirect'] == 'conditional') {
     webform_redirect_configure_form_submit_save($node, $form_state['values']['conditional']);
+  }
+  elseif(!empty($form_state['values']['conditional'])) {
+    // When user change the option, make sure staled settings are  remove from
+    // the webform_redirect table.
+    $exist = db_result(db_query('SELECT count(nid) FROM {webform_redirect} WHERE nid=%d', array($node->nid)));
+    if ($exist) {
+      db_query('DELETE FROM {webform_redirect} WHERE nid = %d', array($node->nid));
+    }
   }
 }
 
