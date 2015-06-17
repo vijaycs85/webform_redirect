@@ -1,0 +1,56 @@
+<?php
+
+/**
+ * @file
+ * Contains install, uninstall, schema implementation of Webform Redirect
+ * module.
+ */
+
+
+/**
+ * Implements hook_install().
+ */
+
+function webform_redirect_install() {
+  drupal_install_schema('webform_redirect');
+}
+
+/**
+ * Implements hook_schema().
+ */
+function webform_redirect_schema() {
+  $schema = array();
+
+  $schema['webform_redirect'] = array(
+    'description' => 'Table for storing conditional redirection properties for webform nodes.',
+    'fields' => array(
+      'rid' => array(
+        'type' => 'serial',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'description' => 'The redirection id.',
+      ),
+      'nid' => array(
+        'description' => 'The node identifier of a webform.',
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+      ),
+      'data' => array(
+        'description' => 'The redirection rules and default settings.',
+        'type' => 'text',
+        'not null' => TRUE,
+      ),
+    ),
+    'primary key' => array('rid'),
+  );
+}
+
+/**
+ * Implements hook_uninstall().
+ */
+
+function webform_redirect_uninstall() {
+  // Drop tables.
+  drupal_uninstall_schema('webform_redirect');
+}

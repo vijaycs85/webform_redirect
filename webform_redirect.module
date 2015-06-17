@@ -1,0 +1,353 @@
+<?php
+
+/**
+ * @file
+ * Contains webform redirect implementation.
+ */
+
+/**
+ * Implements hook_menu().
+ */
+function webform_redirect_menu() {
+  $items['webform-redirect/add-more/callback'] = array(
+    'page callback' => 'webform_redirect_add_more_callback',
+    'access callback' => TRUE,
+    'file' => 'ahah_example_autotextfields.inc',
+    'type' => MENU_CALLBACK,
+  );
+}
+
+/**
+ * Implementation of hook_nodeapi().
+ */
+function webform_redirect_nodeapi(&$node, $op, $arg = NULL) {
+  if ($node->type == 'webform') {
+    switch ($op) {
+      case 'load':
+        $redirect_settings = db_fetch_object(db_query('SELECT * FROM {webform_redirect} WHERE nid=%d', array($node->nid)));
+        if (is_object($redirect_settings)) {
+          module_load_include('inc', 'webform_redirect', 'includes/webform_redirect.class');
+          $node->conditional_redirect = WebformRedirectItem::create(unserialize($redirect_settings->data));
+        }
+        break;
+
+      case 'delete':
+        db_query('DELETE FROM {webform_redirect} WHERE nid=%d', array($node->nid));
+        break;
+    }
+  }
+}
+
+/**
+ * Implements hook_form_alter().
+ */
+function webform_redirect_form_alter(&$form, &$form_state, $form_id) {
+  if ($form_id == 'webform_configure_form' && is_array($form['submission']['redirection']['redirect']['#options'])) {
+    drupal_add_css(drupal_get_path('module', 'webform_redirect') . '/webform_redirect.css');
+    module_load_include('inc', 'webform_redirect', 'includes/webform_redirect.class');
+    ctools_include('dependent');
+    $node = $form['#node'];
+    /* @var  WebformRedirectItem $conditional_redirect */
+    $conditional_redirect = isset($node->conditional_redirect) ? $node->conditional_redirect : NULL;
+    $fallback_options = $form['submission']['redirection']['redirect']['#options'];
+    $form['submission']['redirection']['redirect']['#options']['conditional'] = t('Conditional redirect');
+    $form['submission']['redirection']['#theme'] = 'webform_redirect_conditional_form';
+    $form['submission']['redirection']['conditional'] = array(
+      '#type' => 'fieldset',
+      '#title' => t('Conditional redirection settings'),
+      '#collapsible' => TRUE,
+      '#collapsed' => FALSE,
+      '#theme' => 'webform_redirect_conditional_elements',
+      '#prefix' => '<div id="redirection-settings-wrapper">',
+      '#suffix' => '</div>',
+      '#input' => true,
+      '#id' => 'redirection-settings',
+      '#process' => array('ctools_dependent_process'),
+      '#dependency' => array('radio:redirect' => array('conditional')),
+      '#tree' => TRUE,
+    );
+    $form['submission']['redirection']['conditional']['default']  = array(
+      '#type' => 'fieldset',
+      '#title' => t('Default behaviour'),
+      '#collapsible' => TRUE,
+      '#collapsed' => FALSE,
+    );
+    $form['submission']['redirection']['conditional']['default']['fallback'] = array(
+      '#title' => t('Default'),
+      '#description' => t('Default fallback behaviour if none of the below  conditions met.'),
+      '#type' => 'select',
+      '#options' => $fallback_options,
+      '#default_value' => isset($conditional_redirect) ? $conditional_redirect->getDefaultFallback() : NULL,
+
+    );
+    $form['submission']['redirection']['conditional']['default']['url'] = array(
+      '#type' => 'textfield',
+      '#title' => t('Redirect URL'),
+      '#description' => t('URL to redirect the user to upon successful submission.'),
+      '#default_value' => isset($conditional_redirect) ? $conditional_redirect->getDefaultUrl() : NULL,
+      '#maxlength' => 255,
+      '#process' => array('ctools_dependent_process'),
+      '#dependency' => array('edit-conditional-default-fallback' => array('url')),
+    );
+
+    $options = array();
+    foreach ($node->webform['components'] as $cid => $component) {
+      $options[$cid] = $component['name'];
+    }
+    if (!empty($options)) {
+      $options = array('' => 'Select') + $options;
+    }
+
+    for ($i = 0; $i < 10; $i++) {
+      $key = 'redirect_rule_' . $i;
+      /** @var WebformRedirectRule $rule */
+      $rule = isset($conditional_redirect) ? $conditional_redirect->getRuleById($key) : NULL;
+      $form['submission']['redirection']['conditional'][$key] = array(
+        '#type' => 'item',
+        '#prefix' => '<div class="clear">',
+        '#suffix' => '</div>',
+      );
+      $form['submission']['redirection']['conditional'][$key]['field'] = array(
+        '#type' => 'select',
+        '#options' => $options,
+        '#default_value' => isset($rule) ? $rule->getField() : NULL,
+        '#prefix' => '<div class="rule-field">',
+        '#suffix' => '</div>',
+      );
+      $form['submission']['redirection']['conditional'][$key]['value'] = array(
+        '#type' => 'textfield',
+        // '#title' => t('Value'),
+        '#maxlength' => 255,
+        '#size' => 20,
+        '#default_value' => isset($rule) ? $rule->getValue() : NULL,
+        '#prefix' => '<div class="rule-field">',
+        '#suffix' => '</div>',
+      );
+      $form['submission']['redirection']['conditional'][$key]['destination'] = array(
+        '#type' => 'textfield',
+        // '#title' => t('URL'),
+        '#maxlength' => 255,
+        '#default_value' => isset($rule) ? $rule->getUrl() : NULL,
+        '#prefix' => '<div class="rule-field">',
+        '#suffix' => '</div>',
+      );
+    }
+    $form['submission']['redirection']['conditional']['redirect_add'] = array(
+      '#type' => 'submit',
+      '#value' => t('Add item'),
+      '#prefix' => '<div class="clear">',
+      '#suffix' => '</div>',
+    );
+
+    $form['#validate'][] = 'webform_redirect_configure_form_validate';
+    $form['#submit'][] = 'webform_redirect_configure_form_submit';
+  }
+  elseif (strpos($form_id, 'webform_client_form_') === 0) {
+    $form['#submit'][] = 'webform_redirect_client_form_submit';
+  }
+}
+
+/**
+ * Validate handler for webform_configure_form().
+ */
+function webform_redirect_configure_form_validate($form, &$form_state) {
+  if ($form_state['values']['redirect'] == 'conditional') {
+    form_set_value($form['submission']['redirection']['redirect_url'], '<conditional>', $form_state);
+  }
+}
+
+/**
+ * Submit handler for webform_configure_form().
+ */
+function webform_redirect_configure_form_submit($form, &$form_state) {
+  // Edit the node by reference just to shorten it up.
+  $node = &$form['#node'];
+  // Save the redirect URL
+  $settings = array_filter($form_state['values']['conditional']);
+  if (!empty($settings) && $form_state['values']['redirect'] == 'conditional') {
+    webform_redirect_configure_form_submit_save($node, $form_state['values']['conditional']);
+  }
+}
+
+function webform_redirect_configure_form_submit_save($node, $settings) {
+  $exist = db_result(db_query('SELECT count(nid) FROM {webform_redirect} WHERE nid=%d', array($node->nid)));
+  if ($exist) {
+    db_query('UPDATE {webform_redirect} SET  data = "%s" WHERE nid = %d', array(serialize($settings), $node->nid));
+  }
+  else {
+    db_query('INSERT INTO {webform_redirect} (nid, data) VALUES (%d, "%s")', array($node->nid, serialize($settings)));
+  }
+
+}
+
+function webform_redirect_client_form_submit($form, &$form_state) {
+  // Edit the node by reference just to shorten it up.
+  $node = $form['#node'];
+  $redirect_url = trim($node->webform['redirect_url']);
+  if ($redirect_url == '<conditional>') {
+    $sid = $form_state['values']['details']['sid'] ? (int) $form_state['values']['details']['sid'] : NULL;
+    $values = $form_state['values'];
+    $redirect = NULL;
+    /** @var  WebformRedirectItem $conditional_redirect */
+    $conditional_redirect = $node->conditional_redirect;
+    foreach ($conditional_redirect->getRules() as $key => $rule) {
+      $submitted = $values['submitted'][$rule->getField()];
+      if ($rule->getValue() == $submitted || (is_array($submitted) && in_array($rule->getValue(), $submitted))) {
+        $redirect_url = $rule->getUrl();
+        $redirect_url = webform_redirect_clean_redirect_url($redirect_url, $node, $sid);
+
+        if (valid_url($redirect_url, TRUE)) {
+          $redirect = $redirect_url;
+        }
+        elseif ($redirect_url) {
+          $redirect = $redirect_url;
+        }
+        break;
+      }
+    }
+
+    // No condition matched. Fallback to default.
+    if (!$redirect) {
+      $redirect = webform_redirect_client_get_fallback_redirect($node, $sid);
+    }
+
+    $form_state['redirect'] = $redirect;
+  }
+}
+
+function webform_redirect_clean_redirect_url($url, $node, $sid) {
+  // As this module handles the core webform functionality, we have to do
+  // make sure it behaves the same way as webform.
+  $submission = webform_get_submission($node->webform['nid'], $sid, TRUE);
+  $url = _webform_filter_values(trim($url), $node, $submission, NULL, FALSE, TRUE);
+
+  // Remove the domain name from the redirect.
+  $url = preg_replace('/^' . preg_quote($GLOBALS['base_url'], '/') . '\//', '', $url);
+  return $url;
+}
+
+function webform_redirect_client_get_fallback_redirect($node, $sid) {
+  /* @var  WebformRedirectItem $conditional_redirect */
+  $conditional_redirect = $node->conditional_redirect;
+  $fallback = $conditional_redirect->getDefaultFallback();
+  $redirect_url = $conditional_redirect->getDefaultUrl();
+  $redirect_url = webform_redirect_clean_redirect_url($redirect_url, $node, $sid);
+
+  $redirect = NULL;
+  // Default fallback.
+  if ($fallback == '<none>') {
+    $redirect = NULL;
+  }
+  elseif ($fallback== '<confirmation>') {
+    $redirect = array('node/' . $node->nid . '/done', 'sid=' . $sid);
+  }
+  elseif (valid_url($redirect_url, TRUE)) {
+    $redirect = $redirect_url;
+  }
+  elseif ($redirect_url && strpos($redirect_url, 'http') !== 0) {
+    $parts = parse_url($redirect_url);
+    $query = $parts['query'] ? ($parts['query'] . '&sid=' . $sid) : ('sid=' . $sid);
+    $redirect = array($parts['path'], $query, $parts['fragment']);
+  }
+  return $redirect;
+}
+
+function webform_redirect_add_more_callback() {
+  $form = webform_redirect_ahah_callback_helper();
+  $textfields = $form['textfields'];
+
+  // Remove the prefix/suffix wrapper so we don't double it up.
+  unset($textfields['#prefix'], $textfields['#suffix']);
+
+  // Render the output.
+  $output = theme('status_messages');
+  $output .= drupal_render($textfields);
+
+  // Final rendering callback.
+  drupal_json(array('status' => TRUE, 'data' => $output));
+  exit();
+
+}
+
+
+/**
+ * Does the very standard things that must be done in any normal callback.
+ * Used by each callback in this example module.
+ */
+function webform_redirect_ahah_callback_helper() {
+  $form_state = array('storage' => NULL, 'submitted' => FALSE);
+  $form_build_id = $_POST['form_build_id'];
+  $form = form_get_cache($form_build_id, $form_state);
+  $args = $form['#parameters'];
+  $form_id = array_shift($args);
+  $form_state['post'] = $form['#post'] = $_POST;
+  // Enable the submit/validate handlers to determine whether AHAH-submittted.
+  $form_state['ahah_submission'] = TRUE;
+  $form['#programmed'] = $form['#redirect'] = FALSE;
+  drupal_process_form($form_id, $form, $form_state);
+  $form = drupal_rebuild_form($form_id, $form_state, $args, $form_build_id);
+  return $form;
+}
+
+
+/**
+ * Implements hook_theme().
+ */
+function webform_redirect_theme() {
+  return array(
+    'webform_redirect_conditional_form' => array(
+      'arguments' => array('form' => NULL),
+    ),
+    'webform_redirect_conditional_elements' => array(
+    'arguments' => array('form' => NULL),
+    ),
+  );
+}
+
+/**
+ * Theme the redirection setting on the webform node form.
+ */
+function theme_webform_redirect_conditional_elements($form) {
+
+}
+
+/**
+ * Theme the redirection setting on the webform node form.
+ */
+function theme_webform_redirect_conditional_form($form) {
+  // Add special class for setting the active radio button.
+  $form['redirect_url']['#attributes']['class'] = 'webform-set-active';
+
+  // Remove title and description for Redirect URL field.
+  $form['redirect_url']['#title'] = NULL;
+  $form['redirect_url']['#description'] = NULL;
+
+  // Add prefix and suffix to display Redirect URL field inline.
+  $form['redirect']['url']['#prefix'] = '<div class="webform-container-inline">';
+  $form['redirect']['url']['#suffix'] = '</div>';
+  $form['redirect']['url']['#title'] = $form['redirect']['url']['#title'] . ': ' . drupal_render($form['redirect_url']);
+
+
+  // Add special class for setting the active radio button.
+  $form['condition']['#attributes']['class'] = 'webform-set-active';
+
+  // Remove title and description for Redirect URL field.
+  $form['condition']['#title'] = NULL;
+  $form['condition']['#description'] = NULL;
+
+  // Add prefix and suffix to display Redirect URL field inline.
+  $form['redirect']['conditional']['#prefix'] = '<div class="webform-container-inline">';
+  $form['redirect']['conditional']['#suffix'] = '</div>';
+  $form['redirect']['conditional']['#title'] = $form['redirect']['conditional']['#title'] . ':' . drupal_render($form['condition']);
+
+  return drupal_render($form);
+}
+
+/**
+ * Theme the redirection setting on the webform node form.
+ */
+function webform_redirect_conditional_elements($form) {
+  $form['redirect_field']['#title'] = NULL;
+  $form['#title'] = $form['#title'] . ' <strong>Field: </strong>';
+  return drupal_render($form);
+}

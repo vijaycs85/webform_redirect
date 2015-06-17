@@ -1,0 +1,8 @@
+#redirection-settings-wrapper .clear {
+    clear: both;
+}
+
+#redirection-settings-wrapper .rule-field {
+    float:left;
+    padding: 0 10px;
+}

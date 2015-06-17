@@ -1,0 +1,7 @@
+name = Webform Redirect
+description = Allows to redirect webform to different URLs depending on submitted value(s).
+core = 6.x
+dependecies[] = webform
+dependecies[] = ctools
+
+files[] = includes/webform_redirect.class.inc
