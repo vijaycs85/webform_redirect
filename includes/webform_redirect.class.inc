@@ -24,12 +24,12 @@ class WebformRedirectItem {
 
   public function __construct($default, $values) {
     $this->defaultFallback = $default['fallback'];
-    $this->defaultUrl = $default['url'];
+    $this->defaultUrl = isset($default['url']) ? $default['url'] : NULL;
     $this->rules = $this->getParsedRules($values);
   }
 
   public static function create($values) {
-    return new static($values['default'], $values);
+    return new static($values['default'], $values['rules']);
   }
 
   public function getDefaultFallback() {
@@ -38,6 +38,10 @@ class WebformRedirectItem {
 
   public function getRules() {
     return $this->rules;
+  }
+
+  public function getRulesCount() {
+    return count($this->rules);
   }
 
   public function getDefaultUrl(){
@@ -61,10 +65,9 @@ class WebformRedirectItem {
   protected function getParsedRules($raw_rules) {
     $rules = array();
     foreach ($raw_rules as $key => $rule) {
-      if (strpos($key, 'redirect_rule_') !== 0) {
-        continue;
+      if (WebformRedirectRule::isValid($rule)) {
+        $rules['redirect_rule_' . $key] = WebformRedirectRule::create($key, $rule);
       }
-      $rules[$key] = WebformRedirectRule::create($key, $rule);
     }
     return $rules;
   }
@@ -96,6 +99,20 @@ class WebformRedirectRule {
       $rule_raw['value'],
       $rule_raw['destination']
     );
+  }
+
+  /**
+   * @param $rule_raw
+   *
+   * @return bool
+   */
+  public static function isValid($rule_raw) {
+    $is_valid = FALSE;
+
+    if (is_array($rule_raw)) {
+      $is_valid = !empty($rule_raw['field']) && !empty($rule_raw['value']) && !empty($rule_raw['destination']);
+    }
+    return $is_valid;
   }
 
   /**

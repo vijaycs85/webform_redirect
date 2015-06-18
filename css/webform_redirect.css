@@ -2,7 +2,7 @@
     clear: both;
 }
 
-#redirection-settings-wrapper .rule-field {
+.rule-wrapper .form-item .form-item {
     float:left;
     padding: 0 10px;
 }
