@@ -26,8 +26,8 @@ function webform_redirect_rule_delete_callback($js, $rule_id) {
   ctools_include('ajax');
 
   $commands = array();
-  $commands[] = ctools_ajax_command_remove(".rule-wrapper.rule-$rule_id");
-  $commands[] = ctools_ajax_command_restripe("#redirection-settings-wrapper");
+  $commands[] = ctools_ajax_command_remove('.rule-wrapper.rule-' . $rule_id);
+  $commands[] = ctools_ajax_command_restripe('#redirection-settings-wrapper');
   ctools_ajax_render($commands);
 }
 /**
@@ -194,7 +194,8 @@ function webform_redirect_configure_form_validate($form, &$form_state) {
     // Ensure the entered rules URL is valid.
     foreach ($form_state['values']['conditional']['rules'] as $index => $rule) {
       if (!WebformRedirectRule::isValid($rule)) {
-        if (!empty($rule['field'])) {
+        // Make sure deleted items are not getting validated.
+        if (!empty($rule['field']) && isset($form['#post']['conditional']['rules'][$index])) {
           // Validate the value for the field.
           if (empty($rule['value'])) {
             form_error($form['submission']['redirection']['conditional']['rules'][$index]['value'], t('Please enter valid value'));

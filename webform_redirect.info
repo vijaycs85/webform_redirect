@@ -5,3 +5,4 @@ dependecies[] = webform
 dependecies[] = ctools
 
 files[] = includes/webform_redirect.class.inc
+files[] = webform_redirect.test

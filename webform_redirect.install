@@ -44,6 +44,7 @@ function webform_redirect_schema() {
     ),
     'primary key' => array('rid'),
   );
+  return $schema;
 }
 
 /**

@@ -1,0 +1,76 @@
+<?php
+
+class WebformRedirectTestCase extends WebformTestCase {
+
+  private $node;
+
+  /**
+   * Implements setUp().
+   */
+  public function setUp() {
+    parent::setUp();
+    drupal_install_modules(array('ctools', 'webform_redirect'));
+    // Create a webform
+    $this->node = parent::testWebformForm();
+  }
+
+  /**
+   * Implements getInfo().
+   */
+  public static function getInfo() {
+    return array(
+      'name' => t('Webform redirect'),
+      'description' => t('Checks Webform conditional settings and content types.'),
+      'group' => t('Webform'),
+    );
+  }
+
+  /**
+   * Tests configuration UI.
+   */
+  public function testConfigurationUI() {
+    $this->drupalLogin($this->webform_users['admin']);
+    $this->drupalGet('node/' . $this->node->nid . '/webform/configure');
+    // Make sure conditional redirect is one of the option.
+    $this->assertText('Conditional redirect');
+    // Should display only 3 rules options by default.
+    for ($i = 0; $i < 3; $i++) {
+      $this->assertField('conditional[rules][redirect_rule_' . $i . '][field]');
+    }
+    $this->assertNoField('conditional[rules][redirect_rule_3][field]');
+
+    // Check error message when the redirect option is selected without a rule.
+    $edit = array(
+      'redirect' => 'conditional',
+      'conditional[default][fallback]' => 'url',
+      'conditional[default][url]' => 'http://www.google.com',
+    );
+    $this->drupalPost(NULL, $edit, 'Save configuration');
+    $this->assertText(t('Please provide at least one rule'));
+
+    // Check rule is getting saved proper.
+    $edit += array(
+      'conditional[rules][redirect_rule_0][field]' => '9',
+      'conditional[rules][redirect_rule_0][value]' => 'foo',
+      'conditional[rules][redirect_rule_0][destination]' => 'node/1',
+    );
+    $this->drupalPost(NULL, $edit, 'Save configuration');
+    $this->assertText(t('The form settings have been updated.'));
+    $this->assertFieldById('edit-conditional-rules-redirect-rule-0-value', 'foo');
+
+    // Fill first 3 rules and click 'add more rules' to bring more options.
+    for ($i = 1; $i < 3; $i++) {
+      $edit += array(
+        'conditional[rules][redirect_rule_' . $i . '][field]' => '9',
+        'conditional[rules][redirect_rule_' . $i . '][value]' => $this->randomString(5),
+        'conditional[rules][redirect_rule_' . $i . '][destination]' => 'node/1',
+      );
+    }
+    $this->drupalPost(NULL, $edit, 'Add more rules');
+    for ($i = 0; $i < 3; $i++) {
+      $this->assertFieldById('edit-conditional-rules-redirect-rule-' . $i . '-value', $edit['conditional[rules][redirect_rule_' . $i . '][value]']);
+    }
+    $this->assertField('conditional[rules][redirect_rule_3][field]');
+  }
+
+}
