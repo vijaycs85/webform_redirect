@@ -730,7 +730,7 @@ class WebformRedirectTestCase extends WebformTestCase {
    */
   public function setUp() {
     parent::setUp();
-    drupal_install_modules(array('ctools', 'webform_redirect'));
+    drupal_install_modules(array('ctools', 'webform', 'webform_redirect'));
     // Create a webform
     $this->node = parent::testWebformForm();
   }
